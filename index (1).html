@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ekwa Labs — AI Receptionist PoC Demo</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  ::-webkit-scrollbar{width:4px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:4px}
+  body{
+    min-height:100vh;
+    background:linear-gradient(145deg,#0a0e1a 0%,#111827 50%,#0f172a 100%);
+    color:#e2e8f0;
+    font-family:'DM Sans','Segoe UI',system-ui,sans-serif;
+    overflow:hidden;
+  }
+  @keyframes typingBounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-6px);opacity:1}}
+  @keyframes fadeInUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes slideInRight{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+  @keyframes ringPulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 20px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+  @keyframes notifSlide{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}}
+
+  .grain{position:fixed;inset:0;opacity:.03;pointer-events:none;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")}
+
+  #notifications{position:fixed;top:20px;right:20px;z-index:100;display:flex;flex-direction:column;gap:8px}
+  .notif{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:10px;padding:10px 16px;font-size:13px;font-weight:500;color:#86efac;animation:notifSlide .3s ease-out}
+
+  .header{padding:16px 32px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.2)}
+  .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff}
+  .header-left{display:flex;align-items:center;gap:12px}
+  .header-title{font-weight:600;font-size:15px;letter-spacing:-.01em}
+  .header-sub{font-size:11px;color:#64748b;font-weight:500}
+  .status-badge{display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:500}
+  .status-dot{width:7px;height:7px;border-radius:50%}
+
+  .main{display:grid;grid-template-columns:1fr 380px;height:calc(100vh - 69px)}
+
+  .call-panel{display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.06)}
+  .call-header{padding:14px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.04);background:rgba(0,0,0,.15)}
+  .call-header-left{display:flex;align-items:center;gap:12px}
+  .call-avatar{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#1e293b,#334155);display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,.08)}
+  .call-title{font-size:14px;font-weight:600}
+  .call-subtitle{font-size:11px;color:#64748b}
+
+  .controls{display:flex;gap:6px}
+  .ctrl-btn{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:6px;color:#e2e8f0;font-size:12px;font-weight:500;font-family:inherit;transition:all .15s}
+  .ctrl-btn:hover{background:rgba(255,255,255,.1)}
+
+  .messages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:4px}
+
+  .idle-screen{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px}
+  .start-btn{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#16a34a);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .3s;box-shadow:0 0 40px rgba(34,197,94,.2);border:none}
+  .start-btn:hover{transform:scale(1.08);box-shadow:0 0 60px rgba(34,197,94,.35)}
+  .idle-title{font-size:18px;font-weight:600;margin-bottom:6px}
+  .idle-desc{font-size:13px;color:#64748b;max-width:320px;line-height:1.5;text-align:center}
+  .idle-meta{display:flex;gap:16px;font-size:11px;color:#475569}
+
+  .ringing-screen{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px}
+  .ring-circle{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#16a34a);display:flex;align-items:center;justify-content:center;animation:ringPulse 1.5s infinite}
+  .ring-text{font-size:16px;font-weight:500;animation:pulse 1s infinite}
+
+  .msg-row{display:flex;margin-bottom:8px;animation:fadeInUp .35s ease-out}
+  .msg-row.patient{justify-content:flex-end}
+  .msg-row.ai{justify-content:flex-start}
+  .msg-inner{display:flex;gap:10px;max-width:78%;align-items:flex-start}
+  .msg-avatar{width:30px;height:30px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;margin-top:2px}
+  .msg-avatar.ai-av{background:linear-gradient(135deg,#3b82f6,#8b5cf6)}
+  .msg-avatar.pt-av{background:linear-gradient(135deg,#6366f1,#8b5cf6)}
+  .msg-label{font-size:10px;color:#64748b;margin-bottom:4px;font-weight:500}
+  .msg-label.right{text-align:right}
+  .msg-bubble{padding:11px 16px;font-size:13.5px;line-height:1.6;color:#e2e8f0}
+  .msg-bubble.ai-b{border-radius:4px 16px 16px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
+  .msg-bubble.pt-b{border-radius:16px 4px 16px 16px;background:linear-gradient(135deg,rgba(59,130,246,.2),rgba(139,92,246,.15));border:1px solid rgba(99,102,241,.2)}
+
+  .typing{display:flex;gap:10px;animation:fadeInUp .2s ease-out;margin-bottom:8px}
+  .typing-dots{display:flex;gap:4px;padding:4px 0}
+  .typing-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.4)}
+  .typing-dot:nth-child(1){animation:typingBounce 1.2s ease-in-out 0s infinite}
+  .typing-dot:nth-child(2){animation:typingBounce 1.2s ease-in-out .15s infinite}
+  .typing-dot:nth-child(3){animation:typingBounce 1.2s ease-in-out .3s infinite}
+  .typing-bubble{padding:12px 18px;border-radius:4px 16px 16px 16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06)}
+
+  .progress-bar{padding:12px 24px;border-top:1px solid rgba(255,255,255,.04);background:rgba(0,0,0,.15)}
+  .progress-labels{display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:6px}
+  .progress-track{height:3px;border-radius:2px;background:rgba(255,255,255,.06);overflow:hidden}
+  .progress-fill{height:100%;background:linear-gradient(90deg,#3b82f6,#8b5cf6);border-radius:2px;transition:width .5s ease}
+
+  .dashboard{background:rgba(0,0,0,.2);overflow-y:auto;display:flex;flex-direction:column}
+  .dash-header{padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.06);font-size:12px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;background:rgba(0,0,0,.15)}
+  .dash-body{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
+
+  .card{padding:16px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);transition:all .4s}
+  .card-title{font-size:11px;font-weight:600;color:#64748b;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+  .card-title.green{color:#86efac}
+
+  .practice-name{font-size:14px;font-weight:600;margin-bottom:8px}
+  .practice-info{font-size:11px;color:#64748b;line-height:1.7}
+
+  .intent-tag{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.2);font-size:12px;font-weight:600;color:#93c5fd;animation:fadeInUp .3s ease-out}
+  .intent-empty{font-size:12px;color:#475569}
+
+  .field-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+  .field-label{font-size:11px;color:#64748b;font-weight:500}
+  .field-value{font-size:12px;color:#e2e8f0;font-weight:500;display:flex;align-items:center;gap:5px;animation:slideInRight .3s ease-out}
+  .field-check{color:#22c55e}
+  .field-empty{font-size:11px;color:#334155;font-family:'JetBrains Mono',monospace}
+
+  .appt-status{display:inline-flex;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;margin-bottom:12px}
+  .appt-status.confirmed{background:rgba(34,197,94,.15);color:#86efac;border:1px solid rgba(34,197,94,.25)}
+  .appt-status.pending{background:rgba(234,179,8,.15);color:#fde047;border:1px solid rgba(234,179,8,.25)}
+  .appt-detail{display:flex;gap:8px;align-items:center;font-size:12px;color:#94a3b8;margin-bottom:6px}
+  .appt-label{color:#64748b;font-size:11px}
+
+  .sys-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .sys-label{font-size:11px;color:#64748b}
+  .sys-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px}
+  .sys-badge.green{background:rgba(34,197,94,.12);color:#86efac}
+  .sys-badge.blue{background:rgba(59,130,246,.12);color:#93c5fd}
+  .sys-badge.gray{background:rgba(255,255,255,.04);color:#475569}
+
+  .summary-card{padding:16px;border-radius:12px;background:linear-gradient(135deg,rgba(34,197,94,.06),rgba(59,130,246,.06));border:1px solid rgba(34,197,94,.12);animation:fadeInUp .5s ease-out}
+  .summary-row{font-size:12px;color:#94a3b8;margin-bottom:6px}
+  .summary-row strong{color:#e2e8f0}
+  .summary-row strong.green{color:#22c55e}
+  .summary-footer{margin-top:6px;font-size:11px;color:#64748b;line-height:1.5}
+
+  svg{display:inline-block;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="grain"></div>
+<div id="notifications"></div>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div class="logo">E</div>
+    <div>
+      <div class="header-title">Ekwa Labs</div>
+      <div class="header-sub">AI Receptionist — Proof of Concept</div>
+    </div>
+  </div>
+  <div id="statusBadge" class="status-badge" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)">
+    <div class="status-dot" style="background:#475569"></div>
+    <span>Ready</span>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <!-- Left: Call Panel -->
+  <div class="call-panel">
+    <div class="call-header">
+      <div class="call-header-left">
+        <div class="call-avatar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e2e8f0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        </div>
+        <div>
+          <div class="call-title">New Patient Call</div>
+          <div class="call-subtitle">(555) 234-8900 → AI Receptionist</div>
+        </div>
+      </div>
+      <div id="controls" class="controls" style="display:none">
+        <button class="ctrl-btn" onclick="togglePlay()"><span id="playIcon">⏸</span> <span id="playLabel">Pause</span></button>
+        <button class="ctrl-btn" onclick="skipStep()">⏭ Next</button>
+        <button class="ctrl-btn" onclick="restart()">↺ Restart</button>
+      </div>
+    </div>
+
+    <div id="messagesArea" class="messages">
+      <!-- Idle screen -->
+      <div id="idleScreen" class="idle-screen">
+        <button class="start-btn" onclick="startCall()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        </button>
+        <div style="text-align:center">
+          <div class="idle-title">Start Demo Call</div>
+          <div class="idle-desc">Simulates a new patient calling Bright Smile Dental and booking their first appointment with the AI receptionist.</div>
+        </div>
+        <div class="idle-meta">
+          <span>⏱ ~3 min demo</span>
+          <span>💬 22 exchanges</span>
+          <span>📅 Appointment booked</span>
+        </div>
+      </div>
+
+      <!-- Ringing screen (hidden) -->
+      <div id="ringingScreen" class="ringing-screen" style="display:none">
+        <div class="ring-circle">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        </div>
+        <div class="ring-text">Incoming call...</div>
+        <div style="font-size:12px;color:#64748b">AI Receptionist answering</div>
+      </div>
+    </div>
+
+    <div id="progressBar" class="progress-bar" style="display:none">
+      <div class="progress-labels">
+        <span>Conversation Progress</span>
+        <span id="progressPct">0%</span>
+      </div>
+      <div class="progress-track">
+        <div id="progressFill" class="progress-fill" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Dashboard -->
+  <div class="dashboard">
+    <div class="dash-header">Practice Dashboard — Live View</div>
+    <div class="dash-body">
+      <!-- Practice Info -->
+      <div class="card">
+        <div class="practice-name">Bright Smile Dental</div>
+        <div class="practice-info">1240 Oak Street, Suite 200, Austin, TX 78701<br>Mon–Fri 8:00 AM – 5:00 PM<br>Dr. Sarah Chen · General, Cosmetic, Implants</div>
+      </div>
+
+      <!-- Intent -->
+      <div id="intentCard" class="card">
+        <div class="card-title">Call Classification</div>
+        <div id="intentContent" class="intent-empty">Awaiting call...</div>
+      </div>
+
+      <!-- Patient Info -->
+      <div class="card">
+        <div class="card-title">Patient Information</div>
+        <div id="patientFields">
+          <div class="field-row"><span class="field-label">Full Name</span><span id="f-name" class="field-empty">—</span></div>
+          <div class="field-row"><span class="field-label">Date of Birth</span><span id="f-dob" class="field-empty">—</span></div>
+          <div class="field-row"><span class="field-label">Phone</span><span id="f-phone" class="field-empty">—</span></div>
+          <div class="field-row"><span class="field-label">Email</span><span id="f-email" class="field-empty">—</span></div>
+          <div class="field-row"><span class="field-label">Insurance</span><span id="f-insurance" class="field-empty">—</span></div>
+          <div class="field-row"><span class="field-label">Chief Concern</span><span id="f-chief_complaint" class="field-empty">—</span></div>
+        </div>
+      </div>
+
+      <!-- Appointment -->
+      <div id="apptCard" class="card">
+        <div class="card-title">Appointment Booking</div>
+        <div id="apptContent" style="font-size:12px;color:#475569">No appointment yet</div>
+      </div>
+
+      <!-- System Integration -->
+      <div class="card">
+        <div class="card-title">System Integration</div>
+        <div id="sysRows">
+          <div class="sys-row"><span class="sys-label">Open Dental PMS</span><span id="sys-pms" class="sys-badge gray">STANDBY</span></div>
+          <div class="sys-row"><span class="sys-label">SMS Notification</span><span id="sys-sms" class="sys-badge gray">READY</span></div>
+          <div class="sys-row"><span class="sys-label">Staff Alert</span><span id="sys-staff" class="sys-badge gray">READY</span></div>
+          <div class="sys-row"><span class="sys-label">Call Recording</span><span id="sys-rec" class="sys-badge gray">STANDBY</span></div>
+        </div>
+      </div>
+
+      <!-- Summary (hidden until call ends) -->
+      <div id="summaryCard" class="summary-card" style="display:none">
+        <div class="card-title green">✓ Call Complete — Summary</div>
+        <div class="summary-row">Outcome: <strong>New Patient Booked</strong></div>
+        <div class="summary-row">Conversion: <strong class="green">Successful</strong></div>
+        <div class="summary-row">Data Collected: <strong>6/6 fields</strong></div>
+        <div class="summary-row">Est. Patient LTV: <strong>$3,200+</strong></div>
+        <div class="summary-footer">Transcript saved · SMS sent · Staff notified · PMS synced</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SCRIPT = [
+  {speaker:"ai",text:"Thank you for calling Bright Smile Dental! This is Emma, how can I help you today?",update:null,delay:1200},
+  {speaker:"patient",text:"Hi, I'd like to schedule an appointment. I've never been to your office before.",update:null,delay:2000},
+  {speaker:"ai",text:"I'd be happy to help you schedule a new patient appointment! Welcome to Bright Smile Dental. May I start with your name?",update:{type:"intent",value:"New Patient Booking"},delay:1800},
+  {speaker:"patient",text:"Sure, it's Michael Rodriguez.",update:null,delay:1500},
+  {speaker:"ai",text:"Great, Michael! And just to confirm — that's M-I-C-H-A-E-L R-O-D-R-I-G-U-E-Z, is that correct?",update:{type:"field",key:"name",value:"Michael Rodriguez"},delay:1800},
+  {speaker:"patient",text:"Yes, that's right.",update:null,delay:1000},
+  {speaker:"ai",text:"Perfect. And what brings you in, Michael? Is there something specific you'd like us to address, or are you looking for a general check-up?",update:null,delay:2000},
+  {speaker:"patient",text:"I've been having some sensitivity in my back teeth when I drink cold things. Plus it's been a while since my last cleaning.",update:null,delay:2500},
+  {speaker:"ai",text:"I understand — tooth sensitivity can definitely be uncomfortable. We'll make sure Dr. Chen takes a close look at that during your visit. I'll note that as your chief concern along with a cleaning. Now, do you have dental insurance you'd like to use?",update:{type:"field",key:"chief_complaint",value:"Tooth sensitivity (cold) + cleaning"},delay:2800},
+  {speaker:"patient",text:"Yes, I have Delta Dental through my employer.",update:null,delay:1500},
+  {speaker:"ai",text:"Great news — we accept Delta Dental. We'll verify your benefits before your appointment so there are no surprises. Could I get your date of birth, please?",update:{type:"field",key:"insurance",value:"Delta Dental (employer)"},delay:2000},
+  {speaker:"patient",text:"March 15th, 1988.",update:null,delay:1200},
+  {speaker:"ai",text:"Got it — March 15, 1988. And the best phone number to reach you?",update:{type:"field",key:"dob",value:"03/15/1988"},delay:1400},
+  {speaker:"patient",text:"512-555-0147.",update:null,delay:1200},
+  {speaker:"ai",text:"And an email address for sending your appointment confirmation and new patient forms?",update:{type:"field",key:"phone",value:"(512) 555-0147"},delay:1400},
+  {speaker:"patient",text:"Sure, it's m.rodriguez@email.com.",update:null,delay:1500},
+  {speaker:"ai",text:"Wonderful, Michael. Let me check Dr. Chen's availability for you... I have a few openings this week. How about Tuesday, February 17th at 10:00 AM, or would Wednesday the 18th at 9:00 AM work better?",update:{type:"field",key:"email",value:"m.rodriguez@email.com"},delay:2500},
+  {speaker:"patient",text:"Tuesday at 10 works perfectly.",update:null,delay:1200},
+  {speaker:"ai",text:"Excellent! I've got you scheduled for Tuesday, February 17th at 10:00 AM with Dr. Sarah Chen for a new patient exam, cleaning, and evaluation of your sensitivity. The appointment will be about 60 minutes. Does that all sound right?",update:{type:"appointment"},delay:3000},
+  {speaker:"patient",text:"That sounds great, thank you!",update:null,delay:1200},
+  {speaker:"ai",text:"You're all set, Michael! I'm sending a confirmation text and email right now with your appointment details and a link to complete your new patient forms online — that way you can skip the paperwork when you arrive. Please come about 10 minutes early. We're located at 1240 Oak Street, Suite 200. Is there anything else I can help you with?",update:{type:"confirmed"},delay:3200},
+  {speaker:"patient",text:"No, that's everything. Thanks so much, Emma!",update:null,delay:1200},
+  {speaker:"ai",text:"You're welcome, Michael! We look forward to seeing you Tuesday. Have a wonderful day!",update:{type:"complete"},delay:1800},
+];
+
+let state = {
+  callState: "idle",
+  currentStep: -1,
+  isPlaying: false,
+  timeout: null,
+  callStartTime: null,
+  timerInterval: null
+};
+
+function $(id){return document.getElementById(id)}
+
+function addNotification(text){
+  const el=document.createElement("div");
+  el.className="notif";el.textContent=text;
+  $("notifications").appendChild(el);
+  setTimeout(()=>el.remove(),3000);
+}
+
+function updateStatus(label,dotColor,bg,border){
+  const b=$("statusBadge");
+  b.style.background=bg;b.style.border="1px solid "+border;
+  b.querySelector(".status-dot").style.background=dotColor;
+  b.querySelector(".status-dot").style.animation=dotColor==="#22c55e"?"pulse 2s infinite":"none";
+  b.querySelector("span").innerHTML=label;
+}
+
+function startTimer(){
+  state.callStartTime=Date.now();
+  state.timerInterval=setInterval(()=>{
+    const s=Math.floor((Date.now()-state.callStartTime)/1000);
+    const m=Math.floor(s/60);const sec=s%60;
+    const label="Live · "+String(m).padStart(2,"0")+":"+String(sec).padStart(2,"0");
+    $("statusBadge").querySelector("span").innerHTML=label;
+  },1000);
+}
+
+function addMessage(speaker,text){
+  const row=document.createElement("div");
+  row.className="msg-row "+speaker;
+
+  const avatarClass=speaker==="ai"?"ai-av":"pt-av";
+  const bubbleClass=speaker==="ai"?"ai-b":"pt-b";
+  const label=speaker==="ai"?"Emma · AI Receptionist":"Patient · Michael";
+  const labelClass=speaker==="patient"?"msg-label right":"msg-label";
+
+  let html='<div class="msg-inner">';
+  if(speaker==="ai"){
+    html+='<div class="msg-avatar '+avatarClass+'"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg></div>';
+  }
+  html+='<div><div class="'+labelClass+'">'+label+'</div><div class="msg-bubble '+bubbleClass+'">'+text+'</div></div>';
+  if(speaker==="patient"){
+    html+='<div class="msg-avatar '+avatarClass+'"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>';
+  }
+  html+='</div>';
+  row.innerHTML=html;
+  $("messagesArea").appendChild(row);
+  $("messagesArea").scrollTop=$("messagesArea").scrollHeight;
+}
+
+function showTyping(speaker){
+  const el=document.createElement("div");
+  el.id="typingIndicator";el.className="typing";
+  const avClass=speaker==="ai"?"ai-av":"pt-av";
+  const icon=speaker==="ai"
+    ?'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg>'
+    :'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+  el.innerHTML='<div class="msg-avatar '+avClass+'">'+icon+'</div><div class="typing-bubble"><div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>';
+  $("messagesArea").appendChild(el);
+  $("messagesArea").scrollTop=$("messagesArea").scrollHeight;
+}
+
+function hideTyping(){
+  const el=$("typingIndicator");
+  if(el)el.remove();
+}
+
+function updateProgress(){
+  const pct=Math.round(((state.currentStep+1)/SCRIPT.length)*100);
+  $("progressPct").textContent=pct+"%";
+  $("progressFill").style.width=pct+"%";
+}
+
+function setField(key,value){
+  const el=$("f-"+key);
+  if(el){
+    el.className="field-value";
+    el.innerHTML='<span class="field-check">✓</span> '+value;
+  }
+}
+
+function setSys(id,status){
+  const el=$("sys-"+id);
+  if(status==="synced"||status==="sent"){el.className="sys-badge green";el.textContent=status.toUpperCase();}
+  else if(status==="connected"||status==="active"){el.className="sys-badge blue";el.textContent=status.toUpperCase();}
+  else{el.className="sys-badge gray";el.textContent=status.toUpperCase();}
+}
+
+function handleUpdate(update){
+  if(!update)return;
+  if(update.type==="intent"){
+    $("intentCard").style.background="rgba(59,130,246,.06)";
+    $("intentCard").style.border="1px solid rgba(59,130,246,.15)";
+    $("intentContent").innerHTML='<span class="intent-tag">📅 '+update.value+'</span>';
+  }else if(update.type==="field"){
+    setField(update.key,update.value);
+    addNotification("✓ Captured: "+update.key.replace("_"," "));
+  }else if(update.type==="appointment"){
+    $("apptCard").style.background="rgba(234,179,8,.06)";
+    $("apptCard").style.border="1px solid rgba(234,179,8,.15)";
+    $("apptContent").innerHTML='<div class="appt-status pending">⏳ Pending Confirmation</div><div class="appt-detail">📅 Tuesday, Feb 17</div><div class="appt-detail">🕐 10:00 AM · 60 min</div><div class="appt-detail"><span class="appt-label">Provider:</span> Dr. Sarah Chen</div><div class="appt-detail"><span class="appt-label">Type:</span> New Patient Exam + Cleaning</div>';
+    addNotification("📅 Appointment slot reserved");
+  }else if(update.type==="confirmed"){
+    $("apptCard").style.background="rgba(34,197,94,.06)";
+    $("apptCard").style.border="1px solid rgba(34,197,94,.15)";
+    const statusEl=$("apptContent").querySelector(".appt-status");
+    if(statusEl){statusEl.className="appt-status confirmed";statusEl.textContent="✓ Confirmed in PMS";}
+    setSys("pms","synced");setSys("sms","sent");setSys("staff","sent");
+    addNotification("✅ Appointment confirmed in PMS");
+  }else if(update.type==="complete"){
+    addNotification("📱 SMS confirmation sent to patient");
+  }
+}
+
+function processStep(idx){
+  if(idx>=SCRIPT.length){
+    state.callState="ended";state.isPlaying=false;
+    clearInterval(state.timerInterval);
+    updateStatus("Call Ended","#475569","rgba(255,255,255,.05)","rgba(255,255,255,.08)");
+    $("controls").style.display="none";
+    $("summaryCard").style.display="block";
+    addNotification("📋 Call summary sent to practice dashboard");
+    return;
+  }
+
+  const step=SCRIPT[idx];
+  const typeDur=step.speaker==="ai"?1200:600;
+
+  showTyping(step.speaker);
+
+  state.timeout=setTimeout(()=>{
+    hideTyping();
+    addMessage(step.speaker,step.text);
+    handleUpdate(step.update);
+    state.currentStep=idx;
+    updateProgress();
+
+    if(state.isPlaying){
+      state.timeout=setTimeout(()=>processStep(idx+1),step.delay);
+    }
+  },typeDur);
+}
+
+function startCall(){
+  state.callState="ringing";
+  $("idleScreen").style.display="none";
+  $("ringingScreen").style.display="flex";
+  updateStatus("Incoming Call...","#eab308","rgba(255,255,255,.05)","rgba(255,255,255,.08)");
+
+  setTimeout(()=>{
+    $("ringingScreen").style.display="none";
+    $("progressBar").style.display="block";
+    $("controls").style.display="flex";
+    state.callState="active";
+    state.isPlaying=true;
+    updateStatus("","#22c55e","rgba(34,197,94,.1)","rgba(34,197,94,.2)");
+    startTimer();
+    setSys("pms","connected");setSys("rec","active");
+    processStep(0);
+  },2000);
+}
+
+function togglePlay(){
+  if(state.isPlaying){
+    state.isPlaying=false;
+    clearTimeout(state.timeout);
+    $("playIcon").textContent="▶";$("playLabel").textContent="Play";
+  }else{
+    state.isPlaying=true;
+    $("playIcon").textContent="⏸";$("playLabel").textContent="Pause";
+    processStep(state.currentStep+1);
+  }
+}
+
+function skipStep(){
+  clearTimeout(state.timeout);
+  hideTyping();
+  const wasPlaying=state.isPlaying;
+  state.isPlaying=true;
+  processStep(state.currentStep+1);
+  if(!wasPlaying){
+    setTimeout(()=>{state.isPlaying=false;clearTimeout(state.timeout);},50);
+  }
+}
+
+function restart(){
+  clearTimeout(state.timeout);
+  clearInterval(state.timerInterval);
+  hideTyping();
+
+  // Remove all messages
+  const area=$("messagesArea");
+  while(area.children.length>2)area.removeChild(area.lastChild);
+
+  state={callState:"idle",currentStep:-1,isPlaying:false,timeout:null,callStartTime:null,timerInterval:null};
+
+  $("idleScreen").style.display="flex";
+  $("ringingScreen").style.display="none";
+  $("progressBar").style.display="none";
+  $("controls").style.display="none";
+  $("summaryCard").style.display="none";
+  $("progressPct").textContent="0%";
+  $("progressFill").style.width="0%";
+  updateStatus("Ready","#475569","rgba(255,255,255,.05)","rgba(255,255,255,.08)");
+
+  // Reset dashboard
+  $("intentCard").style.background="rgba(255,255,255,.02)";
+  $("intentCard").style.border="1px solid rgba(255,255,255,.05)";
+  $("intentContent").innerHTML='<span class="intent-empty">Awaiting call...</span>';
+  ["name","dob","phone","email","insurance","chief_complaint"].forEach(k=>{
+    $("f-"+k).className="field-empty";$("f-"+k).textContent="—";
+  });
+  $("apptCard").style.background="rgba(255,255,255,.02)";
+  $("apptCard").style.border="1px solid rgba(255,255,255,.05)";
+  $("apptContent").innerHTML='<span style="font-size:12px;color:#475569">No appointment yet</span>';
+  ["pms","rec"].forEach(k=>setSys(k,"standby"));
+  ["sms","staff"].forEach(k=>setSys(k,"ready"));
+  $("notifications").innerHTML="";
+}
+</script>
+</body>
+</html>
