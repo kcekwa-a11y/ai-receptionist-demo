@@ -39,7 +39,7 @@
 
   .main{display:grid;grid-template-columns:1fr 380px;height:calc(100vh - 69px)}
 
-  .call-panel{display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.06)}
+  .call-panel{display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.06);min-height:0}
   .call-header{padding:14px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.04);background:rgba(0,0,0,.15)}
   .call-header-left{display:flex;align-items:center;gap:12px}
   .call-avatar{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#1e293b,#334155);display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,.08)}
@@ -89,7 +89,7 @@
   .progress-track{height:3px;border-radius:2px;background:rgba(255,255,255,.06);overflow:hidden}
   .progress-fill{height:100%;background:linear-gradient(90deg,#3b82f6,#8b5cf6);border-radius:2px;transition:width .5s ease}
 
-  .dashboard{background:rgba(0,0,0,.2);overflow-y:auto;display:flex;flex-direction:column}
+  .dashboard{background:rgba(0,0,0,.2);overflow-y:auto;display:flex;flex-direction:column;min-height:0}
   .dash-header{padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.06);font-size:12px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;background:rgba(0,0,0,.15)}
   .dash-body{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
 
@@ -269,6 +269,111 @@
 </div>
 
 <script>
+/* ── Audio System ── */
+const AudioSystem = {
+  ctx: null,
+  ringingInterval: null,
+  ttsVoice: null,
+  ttsReady: false,
+
+  init() {
+    // Pre-select a good female voice for Emma
+    const loadVoices = () => {
+      const voices = speechSynthesis.getVoices();
+      if (voices.length === 0) return;
+      // Prefer natural-sounding female English voices
+      const preferred = [
+        'Samantha', 'Karen', 'Moira', 'Fiona', 'Victoria', 'Tessa',
+        'Google UK English Female', 'Microsoft Zira', 'Google US English'
+      ];
+      for (const name of preferred) {
+        const v = voices.find(v => v.name.includes(name) && v.lang.startsWith('en'));
+        if (v) { this.ttsVoice = v; break; }
+      }
+      if (!this.ttsVoice) {
+        this.ttsVoice = voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female'))
+          || voices.find(v => v.lang.startsWith('en'))
+          || voices[0];
+      }
+      this.ttsReady = true;
+    };
+    speechSynthesis.onvoiceschanged = () => loadVoices();
+    loadVoices();
+  },
+
+  ensureCtx() {
+    if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    return this.ctx;
+  },
+
+  playTone(freq, duration, type = 'sine') {
+    const ctx = this.ensureCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  },
+
+  startRinging() {
+    // Classic two-tone phone ring pattern
+    const ringOnce = () => {
+      this.playTone(440, 0.15);
+      setTimeout(() => this.playTone(480, 0.15), 160);
+      setTimeout(() => this.playTone(440, 0.15), 340);
+      setTimeout(() => this.playTone(480, 0.15), 500);
+    };
+    ringOnce();
+    this.ringingInterval = setInterval(ringOnce, 1200);
+  },
+
+  stopRinging() {
+    if (this.ringingInterval) {
+      clearInterval(this.ringingInterval);
+      this.ringingInterval = null;
+    }
+  },
+
+  playPickup() {
+    // Subtle click/connect sound
+    this.playTone(600, 0.06, 'square');
+    setTimeout(() => this.playTone(900, 0.08, 'square'), 70);
+  },
+
+  speak(text) {
+    return new Promise(resolve => {
+      if (!this.ttsReady || !speechSynthesis) { resolve(); return; }
+      speechSynthesis.cancel(); // stop any previous speech
+      const utter = new SpeechSynthesisUtterance(text);
+      if (this.ttsVoice) utter.voice = this.ttsVoice;
+      utter.rate = 1.05;
+      utter.pitch = 1.1;
+      utter.volume = 0.85;
+      utter.onend = () => resolve();
+      utter.onerror = () => resolve();
+      speechSynthesis.speak(utter);
+    });
+  },
+
+  stopSpeaking() {
+    if (speechSynthesis) speechSynthesis.cancel();
+  },
+
+  playEndCall() {
+    this.playTone(480, 0.12);
+    setTimeout(() => this.playTone(380, 0.2), 130);
+  }
+};
+
+AudioSystem.init();
+
+/* ── Demo Script ── */
 const SCRIPT = [
   {speaker:"ai",text:"Thank you for calling Bright Smile Dental! This is Emma, how can I help you today?",update:null,delay:1200},
   {speaker:"patient",text:"Hi, I'd like to schedule an appointment. I've never been to your office before.",update:null,delay:2000},
@@ -422,6 +527,7 @@ function processStep(idx){
   if(idx>=SCRIPT.length){
     state.callState="ended";state.isPlaying=false;
     clearInterval(state.timerInterval);
+    AudioSystem.playEndCall();
     updateStatus("Call Ended","#475569","rgba(255,255,255,.05)","rgba(255,255,255,.08)");
     $("controls").style.display="none";
     $("summaryCard").style.display="block";
@@ -441,7 +547,14 @@ function processStep(idx){
     state.currentStep=idx;
     updateProgress();
 
-    if(state.isPlaying){
+    if(step.speaker==="ai"&&state.isPlaying){
+      // Speak Emma's line, then schedule next step after speech ends
+      AudioSystem.speak(step.text).then(()=>{
+        if(state.isPlaying){
+          state.timeout=setTimeout(()=>processStep(idx+1),step.delay);
+        }
+      });
+    }else if(state.isPlaying){
       state.timeout=setTimeout(()=>processStep(idx+1),step.delay);
     }
   },typeDur);
@@ -452,8 +565,11 @@ function startCall(){
   $("idleScreen").style.display="none";
   $("ringingScreen").style.display="flex";
   updateStatus("Incoming Call...","#eab308","rgba(255,255,255,.05)","rgba(255,255,255,.08)");
+  AudioSystem.startRinging();
 
   setTimeout(()=>{
+    AudioSystem.stopRinging();
+    AudioSystem.playPickup();
     $("ringingScreen").style.display="none";
     $("progressBar").style.display="block";
     $("controls").style.display="flex";
@@ -470,6 +586,7 @@ function togglePlay(){
   if(state.isPlaying){
     state.isPlaying=false;
     clearTimeout(state.timeout);
+    AudioSystem.stopSpeaking();
     $("playIcon").textContent="▶";$("playLabel").textContent="Play";
   }else{
     state.isPlaying=true;
@@ -481,11 +598,12 @@ function togglePlay(){
 function skipStep(){
   clearTimeout(state.timeout);
   hideTyping();
+  AudioSystem.stopSpeaking();
   const wasPlaying=state.isPlaying;
   state.isPlaying=true;
   processStep(state.currentStep+1);
   if(!wasPlaying){
-    setTimeout(()=>{state.isPlaying=false;clearTimeout(state.timeout);},50);
+    setTimeout(()=>{state.isPlaying=false;clearTimeout(state.timeout);AudioSystem.stopSpeaking();},50);
   }
 }
 
@@ -493,6 +611,8 @@ function restart(){
   clearTimeout(state.timeout);
   clearInterval(state.timerInterval);
   hideTyping();
+  AudioSystem.stopRinging();
+  AudioSystem.stopSpeaking();
 
   // Remove all messages
   const area=$("messagesArea");
